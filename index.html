@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="個人・法人の資産と毎月の支出から、あと何か月生活できるかを計算する家計簿アプリ。2026年の税率・社会保険料率で手取りと法人の税金も概算します。">
+<title>生活ランウェイ家計簿</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=IBM+Plex+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<style>
+/* Layout: 上に「残り月数」の計器、下は左=入力（資産・支出・収入）／右=見通し（推移グラフ・改善提案・シミュレーター） */
+:root{
+  --bg:#EEF1F3; --surface:#FFFFFF; --sunk:#E3E8EC; --ink:#17212B; --muted:#5B6773; --line:#D3DAE0;
+  --accent:#1D6A84; --accent-ink:#FFFFFF;
+  --personal:#1D6A84; --corp:#B0731C; --total:#17212B;
+  --good:#2E7D4F; --warn:#B7791F; --crit:#B83A3A;
+  --good-bg:#E3F1E8; --warn-bg:#F7EDDC; --crit-bg:#F6E1E1;
+  --f-display:"Dela Gothic One","Zen Kaku Gothic New",sans-serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11171D; --surface:#19212A; --sunk:#0E1419; --ink:#E6ECF1; --muted:#93A0AC; --line:#2B3640;
+  --accent:#5DB3D0; --accent-ink:#0B1318; --personal:#5DB3D0; --corp:#E0A04A; --total:#E6ECF1;
+  --good:#6CC08E; --warn:#E0A04A; --crit:#E57A7A; --good-bg:#16291E; --warn-bg:#2C2314; --crit-bg:#2E1919; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11171D; --surface:#19212A; --sunk:#0E1419; --ink:#E6ECF1; --muted:#93A0AC; --line:#2B3640;
+  --accent:#5DB3D0; --accent-ink:#0B1318; --personal:#5DB3D0; --corp:#E0A04A; --total:#E6ECF1;
+  --good:#6CC08E; --warn:#E0A04A; --crit:#E57A7A; --good-bg:#16291E; --warn-bg:#2C2314; --crit-bg:#2E1919; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{margin:0;text-wrap:balance}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* header */
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.top h1{font-family:var(--f-display);font-weight:400;font-size:22px;letter-spacing:.02em}
+.top p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.ghost{background:transparent}
+
+.banner{background:var(--warn-bg);border:1px solid var(--warn);border-radius:10px;padding:10px 14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;font-size:13px}
+
+/* gauge */
+.gauge{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 22px 18px;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,2fr);gap:24px;align-items:center}
+.eyebrow{font-size:11.5px;letter-spacing:.12em;color:var(--muted);font-weight:700}
+.big{font-family:var(--f-display);font-size:clamp(46px,8vw,80px);line-height:1;letter-spacing:-.01em;margin-top:6px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.big small{font-family:var(--f-body);font-size:18px;font-weight:700}
+.big-sub{margin-top:8px;color:var(--muted);font-size:13px}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;letter-spacing:.04em}
+.pill.good{background:var(--good-bg);color:var(--good)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.crit{background:var(--crit-bg);color:var(--crit)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.tile{border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.tile .lbl{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.tile .v{font-family:var(--f-display);font-size:26px;line-height:1.15}
+.tile .v small{font-family:var(--f-body);font-size:12px;font-weight:700;margin-left:2px}
+.tile .d{font-size:11.5px;color:var(--muted)}
+.basis{grid-column:1/-1;display:flex;gap:16px;flex-wrap:wrap;align-items:center;border-top:1px dashed var(--line);padding-top:12px;font-size:12.5px;color:var(--muted)}
+.basis label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.basis input[type=range]{width:120px;accent-color:var(--corp)}
+
+/* main */
+.main{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:20px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel h2{font-size:16px;font-weight:700}
+.tabs{display:flex;gap:4px;background:var(--sunk);padding:4px;border-radius:10px}
+.tab{flex:1;border:0;background:transparent;padding:8px 6px;border-radius:7px;cursor:pointer;font-weight:700;font-size:13px;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.tab .cnt{font-family:var(--f-num);font-weight:400;font-size:11.5px;margin-left:4px}
+
+.group{display:flex;flex-direction:column;gap:6px}
+.group-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:4px 2px;border-bottom:1px solid var(--line)}
+.group-h h3{font-size:13.5px;display:flex;gap:6px;align-items:center}
+.group-h .sum{font-family:var(--f-num);font-size:13px}
+.row{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) 104px 30px;gap:6px;align-items:center}
+.row.exp{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 96px 62px 30px}
+.row input,.row select{width:100%;min-width:0;border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:6px 8px;font-size:13px}
+.row input.amt{text-align:right;font-family:var(--f-num)}
+.row .del{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:16px;border-radius:6px;height:30px}
+.row .del:hover{color:var(--crit);background:var(--crit-bg)}
+.sub2{grid-column:1/-1;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);padding-left:2px}
+.sub2 select{width:auto}
+.add{align-self:flex-start;border:1px dashed var(--line);background:transparent;border-radius:7px;padding:6px 10px;cursor:pointer;font-size:12.5px;color:var(--muted)}
+.add:hover{border-color:var(--accent);color:var(--accent)}
+.hint{font-size:12px;color:var(--muted);margin:0}
+
+/* chart */
+.chart-wrap{overflow-x:auto}
+svg text{fill:var(--muted);font-family:var(--f-num);font-size:11px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend span{display:flex;gap:6px;align-items:center}
+
+/* advice */
+.adv{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
+.adv li{border:1px solid var(--line);border-left-width:4px;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:3px}
+.adv li.good{border-left-color:var(--good)}.adv li.warn{border-left-color:var(--warn)}.adv li.crit{border-left-color:var(--crit)}.adv li.info{border-left-color:var(--accent)}
+.adv b{font-size:13.5px}
+.adv p{margin:0;font-size:12.8px;color:var(--muted)}
+.cuts{width:100%;border-collapse:collapse;font-size:12.8px}
+.cuts th{text-align:left;font-weight:500;color:var(--muted);font-size:11.5px;border-bottom:1px solid var(--line);padding:4px 6px}
+.cuts td{padding:6px;border-bottom:1px solid var(--line)}
+.cuts td.r,.cuts th.r{text-align:right;font-family:var(--f-num)}
+.gain{color:var(--good);font-weight:500}
+
+/* simulator */
+.sim{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.sim label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+.sim input[type=range]{width:100%;accent-color:var(--accent)}
+.sim-out{grid-column:1/-1;background:var(--sunk);border-radius:10px;padding:12px 14px;display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+.sim-out .v{font-family:var(--f-display);font-size:24px}
+
+.note{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;line-height:1.7}
+.note ul{margin:4px 0 0;padding-left:18px}
+.io{display:flex;flex-direction:column;gap:8px}
+.io textarea{width:100%;min-height:90px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:8px;font-family:var(--f-num);font-size:11.5px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+
+/* tax tab */
+.tx{display:flex;flex-direction:column;gap:16px}
+.tx-sec{display:flex;flex-direction:column;gap:8px}
+.tx-sec h3{font-size:13.5px;display:flex;justify-content:space-between;gap:8px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:4px}
+.tx-sec h3 span{font-size:11.5px;font-weight:400;color:var(--muted)}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 10px}
+.field{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);min-width:0}
+.field input,.field select{border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:6px 8px;font-size:13px;color:var(--ink);width:100%;min-width:0}
+.field input{font-family:var(--f-num);text-align:right}
+.seg{display:flex;flex-wrap:wrap;gap:4px;background:var(--sunk);padding:4px;border-radius:9px}
+.seg label{flex:1 1 auto;text-align:center;cursor:pointer;font-size:12.5px;padding:6px 8px;border-radius:6px;color:var(--muted);font-weight:700;position:relative}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.seg label:has(input:focus-visible){outline:2px solid var(--accent)}
+.chk{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted);cursor:pointer}
+.kk{width:100%;border-collapse:collapse;font-size:12px}
+.kk th{font-weight:500;color:var(--muted);text-align:left;padding:3px 4px}
+.kk td{padding:2px 3px}
+.kk input{width:100%;min-width:52px;border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:4px 6px;font-family:var(--f-num);text-align:right;font-size:12px}
+.kk-wrap{overflow-x:auto}
+.ledger{width:100%;border-collapse:collapse;font-size:13px}
+.ledger td{padding:5px 6px;border-bottom:1px solid var(--line)}
+.ledger td.r{text-align:right;font-family:var(--f-num);white-space:nowrap}
+.ledger tr.minus td:first-child{padding-left:16px;color:var(--muted)}
+.ledger tr.total td{font-weight:700;border-bottom:2px solid var(--ink)}
+.ledger th{font-size:11.5px;color:var(--muted);font-weight:500;text-align:right;padding:4px 6px}
+.ledger th:first-child{text-align:left}
+.callout{font-size:12px;border-radius:8px;padding:8px 10px;background:var(--warn-bg);color:var(--ink)}
+.callout.info{background:var(--sunk)}
+.row.auto{opacity:.85}
+.row.auto .lock{grid-column:1/-1;font-size:11.5px;color:var(--muted);padding-left:2px}
+.best td{background:var(--good-bg)}
+
+@media (max-width:880px){
+  .gauge{grid-template-columns:1fr}
+  .main{grid-template-columns:1fr}
+}
+@media (max-width:520px){
+  .tiles{grid-template-columns:1fr}
+  .row{grid-template-columns:minmax(0,1fr) 96px 30px}
+  .row .owner-sel{grid-column:1/-1;order:5}
+  .row.exp{grid-template-columns:minmax(0,1fr) 92px 30px}
+  .row.exp .cyc{grid-column:2}
+  .row.exp .cat-sel{grid-column:1}
+  .sim{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>生活ランウェイ家計簿</h1>
+      <p>個人と法人の資産・毎月の支出から「あと何か月もつか」を計算し、効果の大きい見直し先を示します。</p>
+    </div>
+    <div class="tools">
+      <button class="btn" id="btnIO" type="button">バックアップ</button>
+      <button class="btn ghost" id="btnClear" type="button">すべて消去</button>
+    </div>
+  </header>
+
+  <div class="banner" id="sampleBanner" hidden>
+    <span>いま表示しているのは<strong>サンプルの数字</strong>です。ご自身の金額に書き換えるか、消してから入力してください。</span>
+    <button class="btn primary" id="btnStart" type="button">サンプルを消して入力を始める</button>
+  </div>
+
+  <section class="io panel" id="ioPanel" hidden>
+    <h2>バックアップと復元</h2>
+    <p class="hint">データはこのブラウザの中だけに保存されます。別の端末へ移すときや念のための控えに、下の文字列をコピーしてメモ等に保管してください。復元するときは貼り付けて「読み込む」を押します。</p>
+    <textarea id="ioText" aria-label="バックアップ用データ"></textarea>
+    <div class="tools">
+      <button class="btn" id="btnCopy" type="button">コピー</button>
+      <button class="btn primary" id="btnLoad" type="button">読み込む</button>
+      <button class="btn ghost" id="btnIOClose" type="button">閉じる</button>
+    </div>
+    <div id="confirmClear" hidden class="banner"><span>入力したデータをすべて消します。元に戻せません。</span><span class="tools"><button class="btn primary" id="btnClearYes" type="button">消去する</button><button class="btn" id="btnClearNo" type="button">やめる</button></span></div>
+  </section>
+
+  <section class="gauge" aria-label="残り月数">
+    <div>
+      <div class="eyebrow">いまの生活を続けた場合（個人＋法人）</div>
+      <div class="big"><span id="mainVal">—</span><small id="mainUnit">か月</small></div>
+      <div class="big-sub"><span id="mainPill" class="pill"></span> <span id="mainSub"></span></div>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="lbl"><i class="dot" style="background:var(--personal)"></i>個人だけ</div><div class="v" id="tP">—</div><div class="d num" id="tPd"></div></div>
+      <div class="tile"><div class="lbl"><i class="dot" style="background:var(--corp)"></i>法人だけ</div><div class="v" id="tC">—</div><div class="d num" id="tCd"></div></div>
+      <div class="tile"><div class="lbl"><i class="dot" style="background:var(--total)"></i>現金・預金だけで</div><div class="v" id="tK">—</div><div class="d num" id="tKd"></div></div>
+    </div>
+    <div class="basis">
+      <label><input type="checkbox" id="optCash"> 合算も現金・預金だけで計算する</label>
+      <label>法人資産を生活費に回せる割合 <input type="range" id="optRate" min="0" max="100" step="5"> <span class="num" id="rateVal"></span></label>
+    </div>
+  </section>
+
+  <div class="main">
+    <section class="panel" aria-label="入力">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="assets" id="tab-assets">資産<span class="cnt" id="cA"></span></button>
+        <button class="tab" role="tab" data-tab="expenses" id="tab-expenses">毎月の支出<span class="cnt" id="cE"></span></button>
+        <button class="tab" role="tab" data-tab="incomes" id="tab-incomes">収入<span class="cnt" id="cI"></span></button>
+        <button class="tab" role="tab" data-tab="tax" id="tab-tax">税・社保</button>
+      </div>
+      <div id="editor"></div>
+    </section>
+
+    <div style="display:flex;flex-direction:column;gap:20px;min-width:0">
+      <section class="panel" aria-label="残高の推移">
+        <h2>残高の推移（いまの収支が続いた場合）</h2>
+        <div class="legend"><span><i class="dot" style="background:var(--total)"></i>合算</span><span><i class="dot" style="background:var(--personal)"></i>個人</span><span><i class="dot" style="background:var(--corp)"></i>法人</span></div>
+        <div class="chart-wrap" id="chart"></div>
+      </section>
+
+      <section class="panel" aria-label="改善のアドバイス">
+        <h2>改善のアドバイス</h2>
+        <ul class="adv" id="advice"></ul>
+        <div id="cutsBox"></div>
+      </section>
+
+      <section class="panel" aria-label="シミュレーター">
+        <h2>もし変えたら</h2>
+        <div class="sim">
+          <label>個人の支出を一律で削る <span class="num" id="sCutV"></span><input type="range" id="sCut" min="0" max="50" step="5" value="10"></label>
+          <label>毎月の収入を増やす（個人） <span class="num" id="sIncV"></span><input type="range" id="sInc" min="0" max="500000" step="10000" value="50000"></label>
+          <div class="sim-out"><span>合算で</span><span class="v" id="sRes">—</span><span id="sDiff" class="gain"></span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>計算の前提と注意</strong>
+    <ul>
+      <li>残り月数＝資産 ÷（毎月の支出 − 毎月の収入）。年払いは12で割って月額に換算しています。</li>
+      <li>「税・社保」タブで役員報酬の額面を入れると、所得税・住民税・社会保険料・法人側の税金を概算して残り月数に反映します。使っている税率・保険料率は2026年10月時点で確認した公式情報（協会けんぽ令和8年度料率、令和8年度税制改正後の基礎控除など）に基づく<strong>概算</strong>で、端数処理・各種軽減・個別の控除などは簡略化しています。申告や役員報酬の決定には使わず、税理士に確認してください。</li>
+      <li>法人に貯まった利益を「回せる割合」は、役員報酬以外（配当・退職金・役員貸付など）で移す場合の目減りを、ご自身で見込んで設定してください。</li>
+      <li>株式・投資信託・FX証拠金・暗号資産などは価格が変動し、売却時に税金がかかる場合があります。「現金・預金だけで」の数字も合わせて確認してください。</li>
+      <li>住民税・国民健康保険料・固定資産税・自動車税など年1回や数回にまとめて払うものは、入れ忘れやすい支出です。</li>
+      <li>残り月数の色分け（6か月未満・12か月未満など）は一般的な目安で、個別の状況により必要な額は変わります。</li>
+      <li>データはこのブラウザ内にのみ保存され、外部には送信されません。</li>
+    </ul>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+const KEY='runway-kakeibo-v1';
+const CATS=['サブスク','光熱費','住居','通信','食費','日用品','保険','交通・車','税・社会保険','人件費・外注','交際・娯楽','その他'];
+const SUBTAGS=['動画','音楽','AI','クラウド','ツール','ニュース・学習','その他'];
+const KINDS={cash:'現金・預金',invest:'株式・投信',fx:'FX証拠金',crypto:'暗号資産',other:'その他'};
+const OWN={p:'個人',c:'法人'};
+let uid=1; const nid=()=>'i'+(Date.now().toString(36))+(uid++);
+
+/* ================= 税・社会保険の概算エンジン（2026年10月時点で確認した数値） ================= */
+// 協会けんぽ 令和8年度 都道府県単位保険料率（令和8年3月分〜、介護除く）
+const PREF={"北海道":10.28,"青森県":9.85,"岩手県":9.51,"宮城県":10.10,"秋田県":10.01,"山形県":9.75,"福島県":9.50,"茨城県":9.52,"栃木県":9.82,"群馬県":9.68,"埼玉県":9.67,"千葉県":9.73,"東京都":9.85,"神奈川県":9.92,"新潟県":9.21,"富山県":9.59,"石川県":9.70,"福井県":9.71,"山梨県":9.55,"長野県":9.63,"岐阜県":9.80,"静岡県":9.61,"愛知県":9.93,"三重県":9.77,"滋賀県":9.88,"京都府":9.89,"大阪府":10.13,"兵庫県":10.12,"奈良県":9.91,"和歌山県":10.06,"鳥取県":9.86,"島根県":9.94,"岡山県":10.05,"広島県":9.78,"山口県":10.15,"徳島県":10.24,"香川県":10.02,"愛媛県":9.98,"高知県":10.05,"福岡県":10.11,"佐賀県":10.55,"長崎県":10.06,"熊本県":10.08,"大分県":10.08,"宮崎県":9.77,"鹿児島県":10.13,"沖縄県":9.44};
+const KAIGO=1.62, KOSODATE=0.23, NENKIN=18.3, KYOSHUTSU=0.36, KOKUNEN=17920;
+// 健康保険 標準報酬月額（50等級）と各等級の下限（報酬月額）
+const HS=[58,68,78,88,98,104,110,118,126,134,142,150,160,170,180,190,200,220,240,260,280,300,320,340,360,380,410,440,470,500,530,560,590,620,650,680,710,750,790,830,880,930,980,1030,1090,1150,1210,1270,1330,1390].map(x=>x*1000);
+const HB=[63,73,83,93,101,107,114,122,130,138,146,155,165,175,185,195,210,230,250,270,290,310,330,350,370,395,425,455,485,515,545,575,605,635,665,695,730,770,810,855,905,955,1005,1055,1115,1175,1235,1295,1355].map(x=>x*1000);
+// 大阪府 国保 統一保険料率（令和8年度）: [所得割%, 均等割, 平等割, 賦課限度額] 医療/支援/介護/子ども
+const KK_OSAKA=[[9.50,34990,33908,660000],[3.06,11191,10845,260000],[2.60,18682,0,170000],[0.28,1841,0,30000]];
+const KK_NAMES=['医療分','後期高齢者支援金分','介護分（40〜64歳）','子ども・子育て支援分'];
+const AGES={u40:'40歳未満','40to64':'40〜64歳','65to69':'65〜69歳','70plus':'70歳以上'};
+
+function defaultTax(){return {on:true,pref:'大阪府',jRate:10,kintou:5300,kintouAuto:true,age:'40to64',shaho:'kenpo',salary:0,
+  spouse:'none',spouseNenkin:false,d16:0,dGen:0,dTok:0,dRo:0,dDokyo:0,other:0,corpTax:true,kk:[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]};}
+const autoKintou=p=>p==='大阪府'?5300:5000;
+const fl=(x,u)=>Math.floor(x/u)*u;
+function healthStd(m){let i=0;while(i<HB.length&&m>=HB[i])i++;return HS[i];}
+function kyuyoKojo(S){if(S<=0)return 0;let d;
+  if(S<=1625000)d=550000;else if(S<=1800000)d=S*0.4-100000;else if(S<=3600000)d=S*0.3+80000;else if(S<=6600000)d=S*0.2+440000;else if(S<=8500000)d=S*0.1+1100000;else d=1950000;
+  return Math.min(S,Math.max(740000,Math.floor(d)));}
+function kisoIT(G){return G<=4890000?1040000:G<=6550000?670000:G<=23500000?620000:G<=24000000?480000:G<=24500000?320000:G<=25000000?160000:0;}
+function kisoJ(G){return G<=24000000?430000:G<=24500000?290000:G<=25000000?150000:0;}
+function incomeTaxOn(T){if(T<=0)return 0;const b=[[1950000,.05,0],[3300000,.10,97500],[6950000,.20,427500],[9000000,.23,636000],[18000000,.33,1536000],[40000000,.40,2796000],[Infinity,.45,4796000]];
+  const [,r,d]=b.find(x=>T<=x[0]);return fl((T*r-d)*1.021,100);}
+
+function taxCalc(t){
+  const m=Math.max(0,+t.salary||0), S=m*12, warn=[];
+  const ageKaigo=t.age==='40to64', hasSpouse=t.spouse==='ctrl'||t.spouse==='ctrl70';
+  // 社会保険
+  let kenko=0,kaigo=0,kosodate=0,nenkin=0,kokuho=0,kokunen=0,employer=0,kkDetail=null;
+  const kyuyoShotoku=S-kyuyoKojo(S);
+  let G=kyuyoShotoku;
+  const under23=(+t.d16||0)+(+t.dTok||0);
+  if(S>8500000&&under23>0)G=Math.max(0,G-Math.round((Math.min(S,10000000)-8500000)*0.1));
+  if(t.shaho==='kenpo'){
+    if(m>0){
+      const hs=healthStd(m), ps=Math.min(650000,Math.max(88000,hs));
+      const hr=(PREF[t.pref]||10)/100;
+      kenko=hs*hr/2*12; kaigo=ageKaigo?hs*KAIGO/100/2*12:0; kosodate=hs*KOSODATE/100/2*12;
+      nenkin=t.age==='70plus'?0:ps*NENKIN/100/2*12;
+      employer=kenko+kaigo+kosodate+nenkin+(t.age==='70plus'?0:ps*KYOSHUTSU/100*12);
+    } else warn.push('役員報酬が0円のため、社会保険料は0円として計算しています。');
+  } else {
+    const kk=t.pref==='大阪府'?KK_OSAKA:(t.kk||[]);
+    if(t.pref!=='大阪府'&&!(kk[0]&&+kk[0][0]))warn.push('国民健康保険の料率が未入力です。お住まいの市区町村のサイトで確認して入力してください。');
+    const base=Math.max(0,G-430000);
+    const deps=(+t.d16||0)+(+t.dGen||0)+(+t.dTok||0)+(+t.dRo||0)+(+t.dDokyo||0);
+    const n=1+(hasSpouse?1:0)+deps, adults=n-(+t.d16||0), kn=ageKaigo?1+(hasSpouse?1:0):0;
+    const part=(row,cnt)=>row?Math.min(base*(+row[0]||0)/100+(+row[1]||0)*cnt+(+row[2]||0),+row[3]||Infinity):0;
+    const a=[part(kk[0],n),part(kk[1],n),kn?part(kk[2],kn):0,part(kk[3],adults)];
+    kokuho=a.reduce((x,y)=>x+y,0); kkDetail=a;
+    const payers=(t.age==='u40'||t.age==='40to64'?1:0)+(t.spouseNenkin&&hasSpouse?1:0);
+    kokunen=KOKUNEN*12*payers;
+  }
+  const shaho=kenko+kaigo+kosodate+nenkin+kokuho+kokunen;
+  // 人的控除
+  const sp=t.spouse==='ctrl70'?1:0;
+  const spIT=!hasSpouse?0:G<=9000000?[380000,480000][sp]:G<=9500000?[260000,320000][sp]:G<=10000000?[130000,160000][sp]:0;
+  const spJ=!hasSpouse?0:G<=9000000?[330000,380000][sp]:G<=9500000?[220000,260000][sp]:G<=10000000?[110000,130000][sp]:0;
+  const dg=+t.dGen||0,dt=+t.dTok||0,dr=+t.dRo||0,dd=+t.dDokyo||0;
+  const depIT=dg*380000+dt*630000+dr*480000+dd*580000, depJ=dg*330000+dt*450000+dr*380000+dd*450000;
+  const other=Math.max(0,+t.other||0);
+  // 所得税（令和8年分）
+  const tIT=fl(Math.max(0,G-shaho-kisoIT(G)-spIT-depIT-other),1000);
+  const incomeTax=incomeTaxOn(tIT);
+  if(G>23500000)warn.push('合計所得が2,350万円を超える部分の基礎控除は改正前の区分で計算しています（確認が必要）。');
+  // 住民税（2026年の所得にかかる令和9年度分。基礎控除43万円のまま、給与所得控除は所得税と同じと仮定）
+  const tJ=fl(Math.max(0,G-shaho-kisoJ(G)-spJ-depJ-other),1000);
+  let diff=50000+(hasSpouse?(sp?[100000,60000,30000]:[50000,40000,20000])[G<=9000000?0:G<=9500000?1:2]*(G<=10000000?1:0):0)+dg*50000+dt*180000+dr*100000+dd*130000;
+  let adj=G>25000000?0:tJ<=2000000?0.05*Math.min(diff,tJ):Math.max(0.05*(diff-(tJ-2000000)),2500);
+  let jumin=G<=0?0:Math.max(0,Math.floor(tJ*(+t.jRate||10)/100-adj))+(+t.kintou||0);
+  const takehome=S-shaho-incomeTax-jumin;
+  return {m,S,G,kenko,kaigo,kosodate,nenkin,kokuho,kokunen,kkDetail,shaho,incomeTax,jumin,takehome,employer,corpCost:S+employer,tIT,tJ,warn};
+}
+// 法人の税金（中小法人・標準税率の概算）
+function corpTaxCalc(P){
+  const kintou=70000;
+  if(P<=0)return {houjin:0,chiho:0,jumin:kintou,jigyo:0,tokubetsu:0,total:kintou,P};
+  P=fl(P,1000);
+  const houjin=Math.floor(Math.min(P,8e6)*0.15+Math.max(0,P-8e6)*0.232);
+  const chiho=Math.floor(houjin*0.103), wari=Math.floor(houjin*0.07);
+  const jigyo=Math.floor(Math.min(P,4e6)*0.035+Math.min(Math.max(P-4e6,0),4e6)*0.053+Math.max(0,P-8e6)*0.07);
+  const tokubetsu=Math.floor(jigyo*0.37);
+  return {houjin,chiho,jumin:wari+kintou,jigyo,tokubetsu,total:houjin+chiho+wari+kintou+jigyo+tokubetsu,P};
+}
+
+function sample(){
+  const a=(name,owner,kind,amount)=>({id:nid(),name,owner,kind,amount});
+  const e=(name,owner,cat,amount,cycle='m',tag='')=>({id:nid(),name,owner,cat,amount,cycle,tag});
+  const i=(name,owner,amount,cycle='m')=>({id:nid(),name,owner,amount,cycle});
+  return {sample:true,corpRate:70,cashOnly:false,
+    assets:[a('普通預金','p','cash',2500000),a('証券口座','p','invest',3000000),a('法人口座（預金）','c','cash',6000000),a('FX口座 証拠金','c','fx',1500000)],
+    expenses:[
+      e('家賃','p','住居',150000),e('電気','p','光熱費',12000),e('ガス','p','光熱費',5000),e('水道（2か月で8,000円）','p','光熱費',4000),
+      e('スマホ','p','通信',8000),e('自宅ネット回線','p','通信',5000),e('食費','p','食費',70000),
+      e('動画配信A','p','サブスク',1500,'m','動画'),e('動画配信B','p','サブスク',1000,'m','動画'),e('ショッピング会員（年払い）','p','サブスク',6000,'y','動画'),
+      e('音楽配信A','p','サブスク',1100,'m','音楽'),e('音楽配信B','p','サブスク',1100,'m','音楽'),
+      e('生命保険','p','保険',15000),
+      e('税理士顧問料','c','その他',30000),e('チャートツール（年払い）','c','サブスク',70000,'y','ツール'),
+      e('生成AIツールA','c','サブスク',3000,'m','AI'),e('生成AIツールB','c','サブスク',3000,'m','AI'),e('動画編集ソフト','c','サブスク',2500,'m','ツール')],
+    incomes:[i('売上（月平均）','c',380000)],
+    tax:Object.assign(defaultTax(),{salary:300000})};
+}
+function empty(){return {sample:false,corpRate:70,cashOnly:false,assets:[],expenses:[],incomes:[],tax:defaultTax()};}
+
+let S;
+try{const raw=localStorage.getItem(KEY); S=raw?JSON.parse(raw):sample();}catch(_){S=sample();}
+if(!S||!Array.isArray(S.assets))S=sample();
+if(!S.tax&&S.sample)S=sample();
+if(!S.tax)S.tax=defaultTax(); else S.tax=Object.assign(defaultTax(),S.tax);
+let tab='assets';
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(_){}}
+
+const $=id=>document.getElementById(id);
+const yen=n=>(n<0?'−':'')+'¥'+Math.round(Math.abs(n)).toLocaleString('ja-JP');
+const man=n=>{const a=Math.abs(n);return (n<0?'−':'')+(a>=1e8?(a/1e8).toFixed(2)+'億':a>=1e4?(Math.round(a/1e3)/10).toLocaleString('ja-JP')+'万':Math.round(a).toLocaleString('ja-JP'))+'円';};
+const mo=x=>x.cycle==='y'?(+x.amount||0)/12:(+x.amount||0);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function calc(st,opt={}){
+  const cut=opt.cut||0, extra=opt.extra||0, skip=opt.skip;
+  const rate=(st.corpRate??70)/100;
+  let Pa=0,Ca=0,Pk=0,Ck=0;
+  st.assets.forEach(a=>{const v=+a.amount||0; if(a.owner==='c'){Ca+=v;if(a.kind==='cash')Ck+=v;}else{Pa+=v;if(a.kind==='cash')Pk+=v;}});
+  let Pe=0,Ce=0,Pi=extra,Ci=0;
+  st.expenses.forEach(x=>{if(x.id===skip)return; const v=mo(x); if(x.owner==='c')Ce+=v; else Pe+=v*(1-cut);});
+  st.incomes.forEach(x=>{const v=mo(x); if(x.owner==='c')Ci+=v; else Pi+=v;});
+  let TX=null, CT=null;
+  if(st.tax&&st.tax.on){
+    TX=taxCalc(opt.salary!=null?Object.assign({},st.tax,{salary:opt.salary}):st.tax);
+    Pi+=TX.takehome/12; Ce+=TX.corpCost/12;
+    if(st.tax.corpTax){CT=corpTaxCalc((Ci-Ce)*12); Ce+=CT.total/12;}
+  }
+  const Pb=Pe-Pi, Cb=Ce-Ci;
+  const Tb=Pb+(Cb>0?Cb:Cb*rate);
+  const Ta=(st.cashOnly?Pk:Pa)+(st.cashOnly?Ck:Ca)*rate;
+  const Ka=Pk+Ck*rate;
+  const rw=(a,b)=>b<=0?Infinity:Math.max(0,a/b);
+  return {Pa,Ca,Pk,Ck,Pe,Ce,Pi,Ci,Pb,Cb,Tb,Ta,Ka,rate,TX,CT,
+    rP:rw(Pa,Pb),rC:rw(Ca,Cb),rT:rw(Ta,Tb),rK:rw(Ka,Tb)};
+}
+const fmtR=r=>r===Infinity?'減らない':r>=1200?'100年以上':(Math.floor(r*10)/10).toFixed(1);
+function ymText(r){
+  if(r===Infinity)return '収入が支出を上回っています';
+  const y=Math.floor(r/12), m=Math.floor(r%12);
+  const d=new Date(); d.setMonth(d.getMonth()+Math.floor(r));
+  return `約${y?y+'年':''}${m}か月・${d.getFullYear()}年${d.getMonth()+1}月ごろまで`;
+}
+function level(r){
+  if(r===Infinity)return ['good','黒字'];
+  if(r<6)return ['crit','要対策'];
+  if(r<12)return ['warn','注意'];
+  if(r<24)return ['warn','やや注意'];
+  return ['good','余裕あり'];
+}
+function setTile(id,r,detail){
+  const el=$(id); if(r===Infinity){el.innerHTML='減らない';} else {el.innerHTML=esc(fmtR(r))+(r>=1200?'':'<small>か月</small>');}
+  $(id+'d').textContent=detail;
+}
+
+/* ---------- editor ---------- */
+function ownerSel(v){return `<select class="owner-sel" data-f="owner" aria-label="個人か法人か">${Object.entries(OWN).map(([k,t])=>`<option value="${k}"${v===k?' selected':''}>${t}</option>`).join('')}</select>`;}
+function cycSel(v){return `<select class="cyc" data-f="cycle" aria-label="支払い周期"><option value="m"${v!=='y'?' selected':''}>月額</option><option value="y"${v==='y'?' selected':''}>年額</option></select>`;}
+function renderEditor(){
+  document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.tab===tab));
+  $('cA').textContent=S.assets.length; $('cE').textContent=S.expenses.length; $('cI').textContent=S.incomes.length;
+  const ed=$('editor'); let h='';
+  if(tab==='assets'){
+    h+=`<p class="hint">口座ごとに残高を入れてください。種類が「現金・預金」以外のものは価格が動く資産として扱います。</p>`;
+    ['p','c'].forEach(o=>{
+      const list=S.assets.filter(a=>a.owner===o);
+      h+=`<div class="group"><div class="group-h"><h3><i class="dot" style="background:var(--${o==='p'?'personal':'corp'})"></i>${OWN[o]}の資産</h3><span class="sum" id="sumA${o}"></span></div>`;
+      list.forEach(a=>{h+=`<div class="row" data-k="assets" data-id="${a.id}">
+        <input data-f="name" value="${esc(a.name)}" placeholder="口座名" aria-label="口座名">
+        <select data-f="kind" aria-label="種類">${Object.entries(KINDS).map(([k,t])=>`<option value="${k}"${a.kind===k?' selected':''}>${t}</option>`).join('')}</select>
+        <input class="amt" data-f="amount" type="text" inputmode="numeric" value="${a.amount?Number(a.amount).toLocaleString('ja-JP'):''}" placeholder="0" aria-label="金額">
+        <button class="del" data-del aria-label="削除" type="button">×</button></div>`;});
+      h+=`<button class="add" type="button" data-add="assets" data-owner="${o}">＋ ${OWN[o]}の口座を追加</button></div>`;
+    });
+  } else if(tab==='expenses'){
+    h+=`<p class="hint">サブスク・光熱費・家賃など毎月出ていくお金です。年払いのものは「年額」を選ぶと月額に直して計算します。法人の経費は「法人」に切り替えてください。</p>`;
+    ['p','c'].forEach(o=>{
+      const list=S.expenses.filter(a=>a.owner===o);
+      h+=`<div class="group"><div class="group-h"><h3><i class="dot" style="background:var(--${o==='p'?'personal':'corp'})"></i>${OWN[o]}の支出</h3><span class="sum" id="sumE${o}"></span></div>`;
+      list.forEach(x=>{h+=`<div class="row exp" data-k="expenses" data-id="${x.id}">
+        <input data-f="name" value="${esc(x.name)}" placeholder="項目名" aria-label="項目名">
+        <select class="cat-sel" data-f="cat" aria-label="分類">${CATS.map(c=>`<option${x.cat===c?' selected':''}>${c}</option>`).join('')}</select>
+        <input class="amt" data-f="amount" type="text" inputmode="numeric" value="${x.amount?Number(x.amount).toLocaleString('ja-JP'):''}" placeholder="0" aria-label="金額">
+        ${cycSel(x.cycle)}
+        <button class="del" data-del aria-label="削除" type="button">×</button>
+        <div class="sub2">${ownerSel(x.owner)}${x.cat==='サブスク'?`<span>種類</span><select data-f="tag" aria-label="サブスクの種類">${SUBTAGS.map(t=>`<option${x.tag===t?' selected':''}>${t}</option>`).join('')}</select>`:''}</div></div>`;});
+      h+=autoNote(o,'exp')+`<button class="add" type="button" data-add="expenses" data-owner="${o}">＋ ${OWN[o]}の支出を追加</button></div>`;
+    });
+  } else if(tab==='tax'){
+    h+=renderTaxTab();
+  } else {
+    h+=`<p class="hint">毎月入ってくるお金（法人は売上の月平均など）。役員報酬は「税・社保」タブに額面を入れると、手取りが個人の収入に、額面と会社負担の社会保険料が法人の支出に自動で入ります。ここには入れないでください。</p>`;
+    ['p','c'].forEach(o=>{
+      const list=S.incomes.filter(a=>a.owner===o);
+      h+=`<div class="group"><div class="group-h"><h3><i class="dot" style="background:var(--${o==='p'?'personal':'corp'})"></i>${OWN[o]}の収入</h3><span class="sum" id="sumI${o}"></span></div>`;
+      list.forEach(x=>{h+=`<div class="row" data-k="incomes" data-id="${x.id}">
+        <input data-f="name" value="${esc(x.name)}" placeholder="項目名" aria-label="項目名">
+        ${cycSel(x.cycle)}
+        <input class="amt" data-f="amount" type="text" inputmode="numeric" value="${x.amount?Number(x.amount).toLocaleString('ja-JP'):''}" placeholder="0" aria-label="金額">
+        <button class="del" data-del aria-label="削除" type="button">×</button></div>`;});
+      h+=autoNote(o,'inc')+`<button class="add" type="button" data-add="incomes" data-owner="${o}">＋ ${OWN[o]}の収入を追加</button></div>`;
+    });
+  }
+  ed.innerHTML=h; updateSums(); if(tab==='tax')renderTaxOut();
+}
+function autoNote(o,kind){
+  const R=calc(S); if(!R.TX)return '';
+  if(kind==='inc'&&o==='p')return `<p class="hint">自動計算：役員報酬の手取り 月 <span class="num">${yen(R.TX.takehome/12)}</span>（「税・社保」タブで変更）</p>`;
+  if(kind==='exp'&&o==='c')return `<p class="hint">自動計算：役員報酬＋会社負担の社会保険料 月 <span class="num">${yen(R.TX.corpCost/12)}</span>${R.CT?`、法人の税金 月 <span class="num">${yen(R.CT.total/12)}</span>`:''}（「税・社保」タブで変更）</p>`;
+  if(kind==='exp'&&o==='p'&&R.TX.shaho+R.TX.incomeTax+R.TX.jumin>0)return `<p class="hint">自動計算：社会保険料・所得税・住民税 月 <span class="num">${yen((R.TX.shaho+R.TX.incomeTax+R.TX.jumin)/12)}</span> は手取りの計算で差し引き済みです。ここに重ねて入れないでください（固定資産税・自動車税などは入れてください）。</p>`;
+  return '';
+}
+
+/* ---------- 税・社保タブ ---------- */
+function seg(name,opts,val){return `<div class="seg" role="radiogroup">${Object.entries(opts).map(([k,t])=>`<label><input type="radio" name="${name}" data-t="${name}" value="${k}"${val===k?' checked':''}>${t}</label>`).join('')}</div>`;}
+function nf(key,label,val,unit){return `<label class="field">${label}${unit?`（${unit}）`:''}<input type="text" inputmode="decimal" data-t="${key}" value="${val===0||val?Number(val).toLocaleString('ja-JP',{maximumFractionDigits:3}):''}"></label>`;}
+function renderTaxTab(){
+  const t=S.tax;
+  let h=`<div class="tx">
+  <label class="chk"><input type="checkbox" data-t="on"${t.on?' checked':''}> 税金・社会保険料を自動で計算する</label>
+  <div class="tx-sec"><h3>お住まいの自治体<span>健康保険料率・住民税・国保に使います</span></h3>
+    <div class="fgrid">
+      <label class="field">都道府県<select data-t="pref">${Object.keys(PREF).map(p=>`<option${t.pref===p?' selected':''}>${p}</option>`).join('')}</select></label>
+      ${nf('jRate','住民税の所得割',t.jRate,'%')}
+      ${nf('kintou','住民税の均等割',t.kintou,'円/年')}
+    </div>
+    <p class="hint">住民税は標準税率（所得割10%）で計算します。均等割は都道府県を選ぶと自動で入ります（大阪府は府の森林環境税300円を含む5,300円、その他は標準の5,000円）。独自の上乗せがある自治体もあるため、住民税の通知書と違う場合は書き換えてください。</p>
+  </div>
+  <div class="tx-sec"><h3>年齢<span>介護保険料・年金の加入に影響します</span></h3>${seg('age',AGES,t.age)}</div>
+  <div class="tx-sec"><h3>社会保険の加入形態</h3>${seg('shaho',{kenpo:'法人で健康保険・厚生年金に加入',kokuho:'国民健康保険・国民年金'},t.shaho)}
+    ${t.shaho==='kenpo'?`<p class="hint">協会けんぽ（${esc(t.pref)}・令和8年度料率 ${PREF[t.pref]}%）の場合で計算します。健康保険組合に加入している場合は料率が異なります。</p>`:
+      `<p class="callout">法人から役員報酬を受け取っている代表者は、原則として法人で健康保険・厚生年金に加入する必要があります。国保・国民年金で計算するのは、報酬を受け取っていない場合などの比較用です。</p>
+       ${t.pref==='大阪府'?`<p class="hint">大阪府内の市町村は府の統一保険料率（令和8年度）で計算します。7割・5割・2割の軽減は反映していません。</p>`:
+       `<p class="hint">国民健康保険料は市区町村ごとに違います。お住まいの市区町村のサイトにある「令和8年度 保険料率」を入力してください。</p>
+       <div class="kk-wrap"><table class="kk"><thead><tr><th></th><th>所得割(%)</th><th>均等割(円/人)</th><th>平等割(円/世帯)</th><th>上限(円)</th></tr></thead><tbody>
+       ${KK_NAMES.map((n,i)=>`<tr><th>${n}</th>${[0,1,2,3].map(j=>`<td><input type="text" inputmode="decimal" data-kk="${i}-${j}" value="${(t.kk[i]&&t.kk[i][j])||''}" aria-label="${n}"></td>`).join('')}</tr>`).join('')}
+       </tbody></table></div>`}
+       <label class="chk"><input type="checkbox" data-t="spouseNenkin"${t.spouseNenkin?' checked':''}> 配偶者も国民年金を払っている（20〜59歳）</label>`}
+  </div>
+  <div class="tx-sec"><h3>扶養している家族<span>所得62万円以下（給与のみなら年収136万円以下）が目安</span></h3>
+    <label class="field">配偶者<select data-t="spouse"><option value="none"${t.spouse==='none'?' selected':''}>いない・扶養していない</option><option value="ctrl"${t.spouse==='ctrl'?' selected':''}>扶養している（70歳未満）</option><option value="ctrl70"${t.spouse==='ctrl70'?' selected':''}>扶養している（70歳以上）</option></select></label>
+    <div class="fgrid">
+      ${nf('d16','16歳未満の子',t.d16,'人')}
+      ${nf('dTok','19〜22歳',t.dTok,'人')}
+      ${nf('dGen','16〜18歳・23〜69歳',t.dGen,'人')}
+      ${nf('dRo','70歳以上（同居の親以外）',t.dRo,'人')}
+      ${nf('dDokyo','70歳以上の同居の親',t.dDokyo,'人')}
+    </div>
+    <p class="hint">年齢はその年の12月31日時点です。16歳未満の子は所得税・住民税の扶養控除の対象外ですが、国保の人数には数えます。</p>
+  </div>
+  <div class="tx-sec"><h3>役員報酬とその他の控除</h3>
+    <div class="fgrid">
+      ${nf('salary','役員報酬（額面・月額）',t.salary,'円')}
+      ${nf('other','その他の所得控除（年額）',t.other,'円')}
+    </div>
+    <p class="hint">その他の所得控除は、小規模企業共済・iDeCo・生命保険料控除・医療費控除など、年末調整や確定申告で差し引く金額の合計です。賞与はない前提で計算します。</p>
+    <label class="chk"><input type="checkbox" data-t="corpTax"${t.corpTax?' checked':''}> 法人の税金（法人税・住民税・事業税など）も計算する</label>
+  </div>
+  <div id="taxOut"></div>
+  </div>`;
+  return h;
+}
+function renderTaxOut(){
+  const box=$('taxOut'); if(!box)return;
+  if(!S.tax.on){box.innerHTML='<p class="callout info">自動計算はオフです。税金・社会保険料は「毎月の支出」に手入力した金額だけで計算しています。</p>';return;}
+  const R=calc(S), T=R.TX, C=R.CT;
+  const L=(lbl,y,cls='')=>`<tr class="${cls}"><td>${lbl}</td><td class="r">${yen(y/12)}</td><td class="r">${yen(y)}</td></tr>`;
+  let h=`<div class="tx-sec"><h3>計算結果<span>2026年の所得にかかる概算</span></h3><div class="kk-wrap"><table class="ledger"><thead><tr><th>個人</th><th>月あたり</th><th>年間</th></tr></thead><tbody>`;
+  h+=L('役員報酬（額面）',T.S);
+  if(S.tax.shaho==='kenpo'){
+    h+=L('健康保険料'+(T.kaigo?'（介護保険料を含む）':''),-(T.kenko+T.kaigo),'minus');
+    h+=L('子ども・子育て支援金',-T.kosodate,'minus');
+    h+=L('厚生年金保険料',-T.nenkin,'minus');
+  } else {
+    h+=L('国民健康保険料（世帯）',-T.kokuho,'minus');
+    h+=L('国民年金保険料',-T.kokunen,'minus');
+  }
+  h+=L('所得税（復興特別所得税を含む）',-T.incomeTax,'minus');
+  h+=L('住民税',-T.jumin,'minus');
+  h+=L('手取り',T.takehome,'total');
+  h+=`</tbody></table></div>`;
+  if(T.S>0)h+=`<p class="hint">手取り率 ${Math.round(T.takehome/T.S*1000)/10}%（課税所得：所得税 ${man(T.tIT)}・住民税 ${man(T.tJ)}）</p>`;
+  h+=`<div class="kk-wrap"><table class="ledger"><thead><tr><th>法人</th><th>月あたり</th><th>年間</th></tr></thead><tbody>`;
+  h+=L('役員報酬',T.S);
+  h+=L('会社負担の社会保険料'+(T.employer?'（子ども・子育て拠出金を含む）':''),T.employer);
+  if(C){
+    h+=L(`法人の利益（税引前）`,C.P);
+    h+=L('法人税',C.houjin,'minus');h+=L('地方法人税',C.chiho,'minus');h+=L('法人住民税（均等割7万円を含む）',C.jumin,'minus');h+=L('事業税・特別法人事業税',C.jigyo+C.tokubetsu,'minus');
+    h+=L('法人の税金 合計',C.total,'total');
+  }
+  h+=`</tbody></table></div>`;
+  if(C)h+=`<p class="hint">法人は資本金1億円以下・標準税率で計算しています。東京23区や大阪府などは超過税率のため、実際は少し高くなる場合があります。均等割7万円は資本金1,000万円以下・従業者50人以下の場合の最低額です。前期からの繰越欠損金は考慮していません。</p>`;
+  T.warn.forEach(w=>h+=`<p class="callout">${esc(w)}</p>`);
+  h+=`</div>`;
+  // 役員報酬の比較
+  if(S.tax.shaho==='kenpo'){
+    const cur=Math.round((+S.tax.salary||0)/10000)*10000;
+    const opts=[];for(let d=-200000;d<=200000;d+=50000){const s=cur+d;if(s>=0&&opts.indexOf(s)<0)opts.push(s);}
+    const rows=opts.map(s=>{const r=calc(S,{salary:s});const tx=r.TX,ct=r.CT;
+      const profit=(r.Ci*12)-(r.Ce*12); // 税引後の法人の月次収支×12
+      const burden=tx.shaho+tx.incomeTax+tx.jumin+tx.employer+(ct?ct.total:0);
+      return {s,take:tx.takehome,corp:profit,sum:tx.takehome+profit,burden,rT:r.rT};});
+    const best=rows.reduce((a,b)=>b.sum>a.sum?b:a,rows[0]);
+    h+=`<div class="tx-sec"><h3>役員報酬を変えた場合<span>年間・概算</span></h3><div class="kk-wrap"><table class="ledger"><thead><tr><th>役員報酬（月）</th><th>個人の手取り</th><th>法人に残るお金</th><th>合計</th><th>税・社保の合計</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr class="${r===best?'best':''}"><td>${man(r.s)}${r.s===cur?'（いま）':''}</td><td class="r">${man(r.take)}</td><td class="r">${man(r.corp)}</td><td class="r">${man(r.sum)}</td><td class="r">${man(r.burden)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="hint">「法人に残るお金」は売上から経費・役員報酬・会社負担の社会保険料・法人の税金を引いた年間の額です。法人に残したお金を後で個人に移すときにも税金がかかるため、合計が最大の行が最適とは限りません。社会保険料には将来の年金額が増えるなどの面もあります。役員報酬は原則として事業年度開始から3か月以内にしか改定できないため、実際の変更は税理士と相談してください。</p></div>`;
+  }
+  box.innerHTML=h;
+}
+function updateSums(){
+  const s=(arr,o,f)=>arr.filter(x=>x.owner===o).reduce((t,x)=>t+f(x),0);
+  ['p','c'].forEach(o=>{
+    const a=$('sumA'+o); if(a)a.textContent=yen(s(S.assets,o,x=>+x.amount||0));
+    const e=$('sumE'+o); if(e)e.textContent='月 '+yen(s(S.expenses,o,mo));
+    const i=$('sumI'+o); if(i)i.textContent='月 '+yen(s(S.incomes,o,mo));
+  });
+}
+function find(k,id){return S[k].find(x=>x.id===id);}
+const NUMT=['jRate','kintou','d16','dTok','dGen','dRo','dDokyo','salary','other'];
+function taxInput(e,commit){
+  const el=e.target, k=el.dataset.t, kk=el.dataset.kk; const t=S.tax;
+  if(kk){const [i,j]=kk.split('-').map(Number); t.kk[i]=t.kk[i]||[0,0,0,0]; t.kk[i][j]=Number(String(el.value).replace(/[^\d.]/g,''))||0;}
+  else if(NUMT.includes(k)){t[k]=Number(String(el.value).replace(/[^\d.]/g,''))||0; if(k==='kintou')t.kintouAuto=false;
+    if(commit)el.value=t[k]||t[k]===0?Number(t[k]).toLocaleString('ja-JP',{maximumFractionDigits:3}):'';}
+  else if(el.type==='checkbox')t[k]=el.checked;
+  else {t[k]=el.value; if(k==='pref'&&t.kintouAuto)t.kintou=autoKintou(el.value);}
+  save();
+  const structural=['pref','shaho','on','spouse'].includes(k);
+  if(structural&&commit)renderEditor(); else renderTaxOut();
+  recalc();
+}
+$('editor').addEventListener('input',e=>{
+  if(e.target.dataset.t||e.target.dataset.kk){ if(e.target.type==='text')taxInput(e,false); return; }
+  const row=e.target.closest('[data-id]'); if(!row)return; const it=find(row.dataset.k,row.dataset.id); const f=e.target.dataset.f; if(!it||!f)return;
+  if(f==='amount'){const n=Number(String(e.target.value).replace(/[^\d.]/g,''))||0; it.amount=n;}
+  else it[f]=e.target.value;
+  touch(); updateSums(); recalc();
+});
+$('editor').addEventListener('change',e=>{
+  if(e.target.dataset.t||e.target.dataset.kk){ taxInput(e,true); return; }
+  const f=e.target.dataset.f;
+  if(f==='amount'){const row=e.target.closest('[data-id]');const it=find(row.dataset.k,row.dataset.id); e.target.value=it.amount?Number(it.amount).toLocaleString('ja-JP'):'';}
+  if(f==='owner'||f==='cat'){const row=e.target.closest('[data-id]');const it=find(row.dataset.k,row.dataset.id); if(f==='cat'&&it.cat==='サブスク'&&!it.tag)it.tag='その他'; save(); renderEditor();}
+});
+$('editor').addEventListener('click',e=>{
+  const ad=e.target.closest('[data-add]');
+  if(ad){const k=ad.dataset.add,o=ad.dataset.owner;
+    const it=k==='assets'?{id:nid(),name:'',owner:o,kind:'cash',amount:0}:k==='expenses'?{id:nid(),name:'',owner:o,cat:o==='c'?'その他':'サブスク',tag:'その他',amount:0,cycle:'m'}:{id:nid(),name:'',owner:o,amount:0,cycle:'m'};
+    S[k].push(it); touch(); renderEditor(); recalc();
+    const inp=document.querySelector(`[data-id="${it.id}"] input`); if(inp)inp.focus(); return;}
+  const dl=e.target.closest('[data-del]');
+  if(dl){const row=dl.closest('[data-id]'); S[row.dataset.k]=S[row.dataset.k].filter(x=>x.id!==row.dataset.id); touch(); renderEditor(); recalc();}
+});
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{tab=t.dataset.tab;renderEditor();}));
+function touch(){save();}
+
+/* ---------- outputs ---------- */
+function recalc(){
+  const R=calc(S);
+  $('sampleBanner').hidden=!S.sample;
+  // headline
+  $('mainVal').textContent=fmtR(R.rT); $('mainUnit').hidden=(R.rT===Infinity||R.rT>=1200);
+  const [lv,lt]=level(R.rT); const mp=$('mainPill'); mp.className='pill '+lv; mp.textContent=lt;
+  $('mainSub').textContent=R.Tb>0?`${ymText(R.rT)}／毎月 ${man(R.Tb)} ずつ減少`:`毎月 ${man(-R.Tb)} の黒字`;
+  setTile('tP',R.rP,`${man(R.Pa)}・月 ${R.Pb>0?'−'+man(R.Pb):'+'+man(-R.Pb)}`);
+  setTile('tC',R.rC,`${man(R.Ca)}・月 ${R.Cb>0?'−'+man(R.Cb):'+'+man(-R.Cb)}`);
+  setTile('tK',R.rK,`${man(R.Ka)}（法人分は${S.corpRate}%）`);
+  $('optCash').checked=!!S.cashOnly; $('optRate').value=S.corpRate; $('rateVal').textContent=S.corpRate+'%';
+  drawChart(R); advise(R); sim();
+}
+$('optCash').addEventListener('change',e=>{S.cashOnly=e.target.checked;save();recalc();});
+$('optRate').addEventListener('input',e=>{S.corpRate=+e.target.value;save();recalc();});
+
+function drawChart(R){
+  const el=$('chart');
+  const fin=[R.rT,R.rP,R.rC].filter(x=>isFinite(x));
+  let H=fin.length?Math.min(120,Math.max(12,Math.ceil(Math.max(...fin)*1.1/6)*6)):36;
+  const PT=(a,b)=>t=>a-b*t;
+  const lines=[
+    {c:'var(--corp)',f:PT(S.cashOnly?R.Ck:R.Ca,R.Cb)},
+    {c:'var(--personal)',f:PT(S.cashOnly?R.Pk:R.Pa,R.Pb)},
+    {c:'var(--total)',f:PT(R.Ta,R.Tb),w:2.6}];
+  const W=560,Hh=230,L=58,Rr=14,T=12,B=28;
+  let maxV=1; lines.forEach(l=>{for(let t=0;t<=H;t++)maxV=Math.max(maxV,l.f(t));});
+  const nice=v=>{const p=Math.pow(10,Math.floor(Math.log10(v)));const m=v/p;return (m<=1?1:m<=2?2:m<=5?5:10)*p;};
+  const top=nice(maxV);
+  const x=t=>L+(W-L-Rr)*t/H, y=v=>T+(Hh-T-B)*(1-Math.max(0,v)/top);
+  let s=`<svg viewBox="0 0 ${W} ${Hh}" width="100%" style="min-width:420px;display:block" role="img" aria-label="残高推移グラフ">`;
+  for(let i=0;i<=4;i++){const v=top*i/4;s+=`<line x1="${L}" x2="${W-Rr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end">${man(v).replace('円','')}</text>`;}
+  const step=H<=24?6:H<=60?12:24;
+  for(let t=0;t<=H;t+=step){s+=`<text x="${x(t)}" y="${Hh-8}" text-anchor="middle">${t}か月</text>`;}
+  // area for total
+  const tl=lines[2]; let ap=`M${x(0)},${y(0)}`;
+  for(let t=0;t<=H;t+=0.5)ap+=` L${x(t).toFixed(1)},${y(tl.f(t)).toFixed(1)}`;
+  ap+=` L${x(H)},${y(0)} Z`;
+  s+=`<path d="${ap}" fill="var(--accent)" fill-opacity=".08"/>`;
+  lines.forEach(l=>{let d='';for(let t=0;t<=H;t+=0.5){d+=(d?' L':'M')+x(t).toFixed(1)+','+y(l.f(t)).toFixed(1);}
+    s+=`<path d="${d}" fill="none" stroke="${l.c}" stroke-width="${l.w||1.8}" stroke-linejoin="round"/>`;});
+  if(isFinite(R.rT)&&R.rT<=H){s+=`<circle cx="${x(R.rT)}" cy="${y(0)}" r="4.5" fill="var(--crit)"/><text x="${Math.min(x(R.rT),W-60)}" y="${y(0)-8}" text-anchor="middle" style="fill:var(--crit)">合算ゼロ</text>`;}
+  s+=`</svg>`; el.innerHTML=s;
+}
+
+function advise(R){
+  const out=[]; const add=(lv,t,p)=>out.push({lv,t,p});
+  const exps=S.expenses.map(x=>({...x,m:mo(x)})).filter(x=>x.m>0);
+  const totalE=R.Pe+R.Ce;
+  if(!S.assets.length&&!exps.length){$('advice').innerHTML='<li class="info"><b>まず資産と支出を入力してください</b><p>左の「資産」「毎月の支出」タブに金額を入れると、ここに見直しの提案が出ます。</p></li>';$('cutsBox').innerHTML='';return;}
+
+  // 1 runway
+  if(R.rT===Infinity) add('good','いまの収支なら資産は減りません','合算で毎月の収入が支出を上回っています。ただし売上が月によって変わる場合は、少ない月の金額でも試算しておくと安心です。');
+  else if(R.rT<6) add('crit',`残り約${fmtR(R.rT)}か月です`,'一般的な目安として、生活費の6か月分を下回ると急な出費や収入減に対応しにくくなります。下の「効果が大きい見直し」から優先して手をつけてください。');
+  else if(R.rT<12) add('warn',`残り約${fmtR(R.rT)}か月です`,'1年未満で資産が尽きる見込みです。固定費の見直しと収入の確保を並行して検討してください。');
+  else add('good',`残り約${fmtR(R.rT)}か月です`,`${ymText(R.rT)}。毎月の減少額 ${man(R.Tb)} を小さくするほど期間が延びます。`);
+
+  // 2 cash vs risk assets
+  const risk=(R.Pa-R.Pk)+(R.Ca-R.Ck);
+  if(R.Pa+R.Ca>0&&risk/(R.Pa+R.Ca)>=0.4&&isFinite(R.rK))
+    add('warn','資産の多くが価格の動く資産です',`株式・FX証拠金などが全体の${Math.round(risk/(R.Pa+R.Ca)*100)}%。現金・預金だけで計算すると残り約${fmtR(R.rK)}か月です。相場が下がった時期に売らずに済むよう、生活費の何か月分を預金で持つか決めておくと判断がぶれにくくなります。`);
+
+  // 3 corp
+  if(R.Cb>0&&R.Ca>0) add(R.rC<12?'warn':'info',`法人は毎月 ${man(R.Cb)} の赤字です`,`法人の資産だけで見ると残り約${fmtR(R.rC)}か月。役員報酬を払った後の法人の残りも確認してください。役員報酬の額は原則として事業年度途中で自由に変えられないため、変更は税理士に相談してから決めてください。`);
+
+  // 4 subscriptions
+  const subs=exps.filter(x=>x.cat==='サブスク');
+  if(subs.length){
+    const sm=subs.reduce((t,x)=>t+x.m,0);
+    add('info',`サブスクは${subs.length}件・月 ${man(sm)}（年 ${man(sm*12)}）`,`支出全体の${Math.round(sm/totalE*100)}%。直近1か月で使っていないものから解約を検討してください。`);
+    const by={}; subs.forEach(x=>{const k=x.owner+':'+(x.tag||'その他'); (by[k]=by[k]||[]).push(x);});
+    Object.entries(by).forEach(([k,l])=>{const tg=k.split(':')[1]; if(l.length>=2&&tg!=='その他'){
+      const cheap=l.slice().sort((a,b)=>a.m-b.m)[0]; const save=l.reduce((t,x)=>t+x.m,0)-cheap.m;
+      add('warn',`「${tg}」のサブスクが${l.length}件あります（${OWN[k[0]]}）`,`${l.map(x=>x.name||'無名').join('・')}。1つに絞ると最大で月 ${man(save)} 減り、合算で約${gainOf(R,save,k[0])}か月延びます。`);}});
+  }
+
+  // 5 biggest category
+  const catT={}; exps.filter(x=>x.owner==='p').forEach(x=>catT[x.cat]=(catT[x.cat]||0)+x.m);
+  const cs=Object.entries(catT).sort((a,b)=>b[1]-a[1]);
+  if(cs.length&&R.Pe>0){const [c,v]=cs[0]; add('info',`個人の支出で一番大きいのは「${c}」です`,`月 ${man(v)}・個人支出の${Math.round(v/R.Pe*100)}%。${c==='住居'?'家賃は下げにくい一方、効果は毎月続きます。更新時期に合わせて家賃交渉や住み替えの比較をする余地があります。':c==='税・社会保険'?'税・社会保険料は個人では減らしにくい支出です。役員報酬と配当・経費の配分などで変わる場合があるため、税理士に試算を依頼するのが確実です。':'この分類から見直すと期間への効果が大きくなります。'}`);}
+
+  // 6 utilities
+  const ut=exps.filter(x=>x.cat==='光熱費'&&x.owner==='p'); if(ut.length){const v=ut.reduce((t,x)=>t+x.m,0);
+    add('info',`光熱費は月 ${man(v)}`,'電気・ガスは契約プランやセット割の見直しで下がる場合があります。季節で変わるので、過去12か月の平均を入れると精度が上がります。');}
+
+  // 7 yearly
+  const yl=exps.filter(x=>x.cycle==='y'); if(yl.length){const v=yl.reduce((t,x)=>t+(+x.amount||0),0);
+    add('info',`年払いが${yl.length}件・合計 ${man(v)}`,'月額に直して計算していますが、実際には一度にまとまって出ていきます。更新月の前に必要かどうか確認する習慣をつけると解約漏れを防げます。');}
+
+  // 8 tax reminder
+  if(!S.tax.on&&!exps.some(x=>x.cat==='税・社会保険'&&x.owner==='p')) add('warn','税・社会保険料が入っていません','住民税・国民健康保険料・年金などは金額が大きく、入れ忘れると残り月数が実際より長く出ます。「税・社保」タブの自動計算を使うか、年額を「年額」で入れてください。');
+  if(R.TX){
+    const T=R.TX, all=T.shaho+T.incomeTax+T.jumin+T.employer+(R.CT?R.CT.total:0);
+    if(T.S>0) add('info',`税金と社会保険料は年 ${man(all)}（概算）`,`役員報酬 ${man(T.S)} に対し、個人の手取りは ${man(T.takehome)}（${Math.round(T.takehome/T.S*100)}%）。会社負担の社会保険料 ${man(T.employer)}${R.CT?`、法人の税金 ${man(R.CT.total)}`:''}を含みます。「税・社保」タブで役員報酬を変えた場合の比較を確認できます。`);
+    const dup=S.incomes.concat(S.expenses).filter(x=>/役員報酬/.test(x.name||''));
+    if(T.S>0&&dup.length) add('crit','役員報酬が二重に入っている可能性があります',`「${dup.map(x=>x.name).join('」「')}」が手入力されています。自動計算でも役員報酬を計上しているため、手入力の行を消してください。`);
+    const dupT=exps.filter(x=>x.owner==='p'&&/(国保|国民健康保険|国民年金|住民税|所得税|厚生年金)/.test(x.name||''));
+    if(dupT.length) add('warn','税・社会保険料が二重に入っている可能性があります',`「${dupT.map(x=>x.name).join('」「')}」は自動計算に含まれている可能性があります。重複していれば手入力の行を消してください。`);
+  }
+
+  $('advice').innerHTML=out.map(o=>`<li class="${o.lv}"><b>${esc(o.t)}</b><p>${esc(o.p)}</p></li>`).join('');
+
+  // cuts ranking
+  const base=R.rT;
+  const rows=exps.map(x=>{const r2=calc(S,{skip:x.id}).rT; return {x,g:r2===Infinity?Infinity:(isFinite(base)?r2-base:0),inf:r2===Infinity};})
+    .filter(r=>isFinite(base)).sort((a,b)=>(b.inf-a.inf)||(b.g-a.g)).slice(0,6);
+  if(rows.length){
+    $('cutsBox').innerHTML=`<h3 style="font-size:13.5px;margin-bottom:6px">効果が大きい見直し（1項目をやめた場合）</h3>
+    <table class="cuts"><thead><tr><th>項目</th><th>分類</th><th class="r">月額</th><th class="r">延びる期間</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td>${esc(r.x.name||'無名')} <span class="pill ${r.x.owner==='c'?'warn':'good'}" style="font-weight:500">${OWN[r.x.owner]}</span></td><td>${esc(r.x.cat)}</td><td class="r">${yen(r.x.m)}</td><td class="r gain">${r.inf?'黒字化':'+'+r.g.toFixed(1)+'か月'}</td></tr>`).join('')}
+    </tbody></table><p class="hint" style="margin-top:6px">家賃や食費など、ゼロにできない項目も含めて並べています。「半分にしたら」の目安はおおよそ表の半分弱です。</p>`;
+  } else $('cutsBox').innerHTML='';
+}
+function gainOf(R,monthly,owner){
+  if(!isFinite(R.rT))return '—';
+  let tb=R.Tb-(owner==='c'&&R.Cb<=0?monthly*R.rate:monthly);
+  if(tb<=0)return '無制限（黒字化）';
+  return (R.Ta/tb-R.rT).toFixed(1);
+}
+function sim(){
+  const cut=+$('sCut').value/100, ex=+$('sInc').value;
+  $('sCutV').textContent=Math.round(cut*100)+'%'; $('sIncV').textContent='+'+man(ex);
+  const R0=calc(S), R1=calc(S,{cut,extra:ex});
+  $('sRes').textContent=R1.rT===Infinity?'減らない':fmtR(R1.rT)+'か月';
+  $('sDiff').textContent=R1.rT===Infinity?(R0.rT===Infinity?'':'黒字化します'):isFinite(R0.rT)?`いまより +${(R1.rT-R0.rT).toFixed(1)}か月（毎月 ${man(R0.Tb-R1.Tb)} 改善）`:'';
+}
+$('sCut').addEventListener('input',sim); $('sInc').addEventListener('input',sim);
+
+/* ---------- header actions ---------- */
+function toast(t){const e=$('toast');e.textContent=t;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),1800);}
+$('btnStart').addEventListener('click',()=>{S=empty();save();tab='assets';renderEditor();recalc();toast('サンプルを消しました。資産から入力してください');});
+$('btnIO').addEventListener('click',()=>{const p=$('ioPanel');p.hidden=!p.hidden;$('confirmClear').hidden=true;$('ioText').value=JSON.stringify(S);});
+$('btnIOClose').addEventListener('click',()=>{$('ioPanel').hidden=true;});
+$('btnCopy').addEventListener('click',()=>{const t=$('ioText');t.value=JSON.stringify(S);
+  try{navigator.clipboard.writeText(t.value).then(()=>toast('コピーしました'),()=>{t.select();toast('文字列を選択しました。手動でコピーしてください');});}catch(_){t.select();toast('文字列を選択しました。手動でコピーしてください');}});
+$('btnLoad').addEventListener('click',()=>{try{const d=JSON.parse($('ioText').value);if(!d||!Array.isArray(d.assets)||!Array.isArray(d.expenses))throw 0;d.incomes=d.incomes||[];d.tax=Object.assign(defaultTax(),d.tax||{});S=d;save();renderEditor();recalc();toast('読み込みました');}catch(_){toast('読み込めませんでした。コピーした文字列をそのまま貼り付けてください');}});
+$('btnClear').addEventListener('click',()=>{$('ioPanel').hidden=false;$('confirmClear').hidden=false;$('ioText').value=JSON.stringify(S);});
+$('btnClearNo').addEventListener('click',()=>{$('confirmClear').hidden=true;});
+$('btnClearYes').addEventListener('click',()=>{S=empty();save();$('confirmClear').hidden=true;$('ioPanel').hidden=true;renderEditor();recalc();toast('消去しました');});
+
+renderEditor(); recalc();
+})();
+</script>
+</body>
+</html>
