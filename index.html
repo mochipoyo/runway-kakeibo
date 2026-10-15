@@ -75,6 +75,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .tile .v small{font-family:var(--f-body);font-size:12px;font-weight:700;margin-left:2px}
 .tile .d{font-size:11.5px;color:var(--muted)}
 .mode-seg{grid-column:1/-1;max-width:520px}
+.tiles.four{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tile .v.neg{color:var(--crit)}
 .big small.u{font-size:18px}
 .basis{grid-column:1/-1;display:flex;gap:16px;flex-wrap:wrap;align-items:center;border-top:1px dashed var(--line);padding-top:12px;font-size:12.5px;color:var(--muted)}
 .basis label{display:flex;gap:6px;align-items:center;cursor:pointer}
@@ -175,7 +177,7 @@ svg text{fill:var(--muted);font-family:var(--f-num);font-size:11px}
   .main{grid-template-columns:1fr}
 }
 @media (max-width:520px){
-  .tiles{grid-template-columns:1fr}
+  .tiles,.tiles.four{grid-template-columns:1fr}
   .row{grid-template-columns:minmax(0,1fr) 96px 30px}
   .row .owner-sel{grid-column:1/-1;order:5}
   .row.exp{grid-template-columns:minmax(0,1fr) 92px 30px}
@@ -230,6 +232,7 @@ svg text{fill:var(--muted);font-family:var(--f-num);font-size:11px}
       <div class="tile"><div class="lbl"><i class="dot" style="background:var(--personal)"></i><span id="lbP">個人だけ</span></div><div class="v" id="tP">—</div><div class="d num" id="tPd"></div></div>
       <div class="tile"><div class="lbl"><i class="dot" style="background:var(--corp)"></i><span id="lbC">法人だけ</span></div><div class="v" id="tC">—</div><div class="d num" id="tCd"></div></div>
       <div class="tile"><div class="lbl"><i class="dot" style="background:var(--total)"></i><span id="lbK">現金・預金だけで</span></div><div class="v" id="tK">—</div><div class="d num" id="tKd"></div></div>
+      <div class="tile" id="tileS" hidden><div class="lbl"><i class="dot" style="background:var(--personal)"></i><span>報酬を払い終えた時の個人資産</span></div><div class="v" id="tS">—</div><div class="d num" id="tSd"></div></div>
     </div>
     <div class="basis">
       <label><input type="checkbox" id="optCash"> 現金・預金だけで計算する</label>
@@ -471,7 +474,8 @@ function personalMode(st,opt={}){
   }
   if(salaryOn&&isFinite(Mc))cpts.push([Mc,0]);
   const kkMissing=salaryOn&&t.pref!=='大阪府'&&!(t.kk&&t.kk[0]&&+t.kk[0][0]);
-  return {R,T,T0,Mc,end,burn1,burn2,lagJumin,lagKokuho,lagTotal,salaryOn,Pa0,Ca0,pts,cpts,otherInc,kkMissing,
+  const atStop=salaryOn&&isFinite(Mc)?Pa0-burn1*Mc:null; // 報酬を払い終えた時点の個人資産（マイナス＝それ以前に不足）
+  return {R,T,T0,Mc,end,atStop,burn1,burn2,lagJumin,lagKokuho,lagTotal,salaryOn,Pa0,Ca0,pts,cpts,otherInc,kkMissing,
     leftGross:salaryOn?(isFinite(Mc)?Mc*T.S/12:Infinity):0, leftNet:salaryOn?(isFinite(Mc)?Mc*T.takehome/12:Infinity):0};
 }
 function ymBig(r){
@@ -709,7 +713,7 @@ function recalc(){
   const pm=S.viewMode==='personal';
   $('vmTotal').checked=!pm; $('vmPersonal').checked=pm;
   $('optCash').checked=!!S.cashOnly; $('optRate').value=S.corpRate; $('rateVal').textContent=S.corpRate+'%';
-  $('rateWrap').hidden=pm;
+  $('rateWrap').hidden=pm; $('tileS').hidden=!pm; document.querySelector('.tiles').classList.toggle('four',pm);
   let P=null;
   if(pm){
     P=personalMode(S);
@@ -725,6 +729,11 @@ function recalc(){
     $('tCd').textContent=!P.salaryOn?'':P.leftGross===Infinity?`手取り 月 ${man(P.T.takehome/12)}`:`額面合計 ${man(P.leftGross)}`;
     $('tK').innerHTML=P.burn2+P.lagTotal<=0?'赤字なし':esc('月 '+man(P.burn2+P.lagTotal));
     $('tKd').textContent=P.salaryOn?`最初の1年（2年目以降は月 ${man(P.burn2)}）`:'';
+    const ts=$('tS'), tsd=$('tSd'); ts.classList.remove('neg');
+    if(!P.salaryOn){ts.textContent='—';tsd.textContent='役員報酬が未入力です';}
+    else if(P.atStop===null){ts.textContent='—';tsd.textContent='法人の収支が黒字のため、報酬は払い終わりません';}
+    else if(P.atStop>=0){ts.textContent=man(P.atStop);tsd.textContent=`${ymText(P.Mc).replace(/^約[^・]*・/,'').replace('まで','')}時点・いまより ${P.atStop>=P.Pa0?'+':'−'}${man(Math.abs(P.atStop-P.Pa0))}`;}
+    else {ts.textContent='不足 '+man(-P.atStop);ts.classList.add('neg');tsd.textContent=`報酬を受け取っている間に、あと${ymShort(P.end)}で個人の資産が尽きます`;}
     $('modeNote').textContent=P.kkMissing?'国保の料率が未入力のため、報酬停止後の国保は0円で計算しています（「税・社保」タブで入力）。':'';
   } else {
     $('mainEyebrow').textContent='いまの生活を続けた場合（個人＋法人）';
@@ -778,6 +787,7 @@ function drawChart(R,P){
   s+=`<path d="${ap}" fill="var(--accent)" fill-opacity=".08"/>`;
   lines.forEach(l=>{let d='';for(let t=0;t<=H;t+=0.5){d+=(d?' L':'M')+x(t).toFixed(1)+','+y(l.f(t)).toFixed(1);}
     s+=`<path d="${d}" fill="none" stroke="${l.c}" stroke-width="${l.w||1.8}" stroke-linejoin="round"/>`;});
+  if(P&&P.atStop!==null&&P.atStop>0&&P.Mc<=H){const cx=x(P.Mc),cy=y(P.atStop);s+=`<circle cx="${cx}" cy="${cy}" r="4.5" fill="var(--personal)" stroke="var(--surface)" stroke-width="2"/><text x="${Math.min(Math.max(cx,L+50),W-70)}" y="${cy-10}" text-anchor="middle" style="fill:var(--ink)">${man(P.atStop)}</text>`;}
   const zr=P?P.end:R.rT;
   if(isFinite(zr)&&zr<=H){s+=`<circle cx="${x(zr)}" cy="${y(0)}" r="4.5" fill="var(--crit)"/><text x="${Math.min(Math.max(x(zr),L+30),W-60)}" y="${y(0)-8}" text-anchor="middle" style="fill:var(--crit)">${P?'個人ゼロ':'合算ゼロ'}</text>`;}
   s+=`</svg>`; el.innerHTML=s;
@@ -793,7 +803,7 @@ function advise(R,P){
   if(P){
     if(!P.salaryOn) add('warn','役員報酬が入力されていません','「税・社保」タブで役員報酬の額面を入れると、法人から報酬を払い続けられる期間と、その後の個人の資産の減り方を計算します。');
     else if(P.Mc===Infinity) add('good','法人の収支は黒字です','いまの売上・経費なら、役員報酬を払い続けても法人の資産は減りません。売上が落ちた場合も試すには「収入」タブの法人の売上を下げてみてください。');
-    else add(P.Mc<12?'crit':P.Mc<24?'warn':'info',`法人が役員報酬を払えるのはあと${ymShort(P.Mc)}`,`法人の資産 ${man(P.Ca0)} が毎月 ${man(R.Cb)} ずつ減ります（役員報酬・会社負担の社会保険料・経費・法人の税金を含み、売上を差し引いた額）。受け取れる手取りの残りは合計 ${man(P.leftNet)} です。`);
+    else add(P.Mc<12?'crit':P.Mc<24?'warn':'info',`法人が役員報酬を払えるのはあと${ymShort(P.Mc)}`,`法人の資産 ${man(P.Ca0)} が毎月 ${man(R.Cb)} ずつ減ります（役員報酬・会社負担の社会保険料・経費・法人の税金を含み、売上を差し引いた額）。受け取れる手取りの残りは合計 ${man(P.leftNet)} です。${P.atStop>=0?`払い終えた時点の個人の資産は ${man(P.atStop)}（いまの ${man(P.Pa0)} から${P.atStop>=P.Pa0?'増加':'減少'}）の見込みです。`:`ただし個人の資産は、報酬を受け取っている間に ${man(-P.atStop)} 不足します。`}`);
     if(P.salaryOn&&P.burn2+P.lagTotal>0) add('info',`報酬が止まると最初の1年は毎月 ${man(P.burn2+P.lagTotal)} の赤字`,`生活費に加えて、国民健康保険・国民年金に切り替わります。国保と住民税は前年の所得で決まるため、最初の1年は前年の役員報酬をもとにした住民税（月 ${man(P.lagJumin)}）と国保（所得0円の場合より月 ${man(P.lagKokuho)} 高い）を見込んでいます。2年目以降は所得0円として月 ${man(P.burn2)} です。実際は年度の切り替わり時期や軽減の有無でずれます。`);
     if(P.end===Infinity) add('good','個人の資産は減りません','役員報酬とその他の収入で生活費をまかなえています。');
     else add(P.end<12?'crit':P.end<24?'warn':'good',`個人の資産で生活できるのはあと${ymShort(P.end)}`,`${ymText(P.end).replace(/^約[^・]*・/,'')}に個人の資産が尽きる見込みです。法人の資産を配当・退職金などの別の方法で個人へ移す場合は含んでいません。`);
