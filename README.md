@@ -40,7 +40,7 @@
 ## 公開方法（GitHub Pages）
 
 1. GitHub で新しいリポジトリを作る（例：`runway-kakeibo`、Public）
-2. `index.html` と `README.md` をアップロード
+2. `index.html`・`README.md`・`favicon.svg`・`favicon-32.png`・`apple-touch-icon.png` をリポジトリの一番上の階層にアップロード（3つの画像はファビコンとスマホのホーム画面アイコンです）
 3. Settings → Pages → Source を「Deploy from a branch」、Branch を `main` / `(root)` にして Save
 4. 数分後に `https://<ユーザー名>.github.io/runway-kakeibo/` で公開されます
 
